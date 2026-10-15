@@ -1,6 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
 
 const defaultJwtSecret = "dev-only-secret-change-me";
 
@@ -16,13 +17,19 @@ function createApp(db) {
   const jwtSecret = process.env.JWT_SECRET || defaultJwtSecret;
   const jwtExpirySeconds = Number(process.env.JWT_EXPIRY_SECONDS || 900);
   const app = express();
+  const authRateLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 30,
+    standardHeaders: true,
+    legacyHeaders: false
+  });
   app.use(express.json());
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
   });
 
-  app.post("/users/register", async (req, res) => {
+  app.post("/users/register", authRateLimiter, async (req, res) => {
     const { username, password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: "username and password are required" });
@@ -42,7 +49,7 @@ function createApp(db) {
     return res.status(201).json({ id: result.lastID, username });
   });
 
-  app.post("/auth/login", async (req, res) => {
+  app.post("/auth/login", authRateLimiter, async (req, res) => {
     const { username, password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: "username and password are required" });
@@ -92,7 +99,7 @@ function createApp(db) {
     }
   }
 
-  app.get("/auth/me", authenticate, async (req, res) => {
+  app.get("/auth/me", authRateLimiter, authenticate, async (req, res) => {
     const user = await db.get("SELECT id, username FROM users WHERE id = ?", [req.user.sub]);
     if (!user) {
       return res.status(404).json({ error: "user not found" });
